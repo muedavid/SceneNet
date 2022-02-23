@@ -20,7 +20,7 @@ start = time.time()
 
 # Important parameter:
 append_to_existing = False
-num_camera = 1
+num_camera = 4
 num_poses_Bedroom = 1
 num_poses_Living_Room = 5
 num_poses_Office = 1
@@ -85,7 +85,7 @@ ratio = 1/2
 
 # get dictionary with possible rooms
 rooms = {'Bedroom': [], 'Living-room': [], 'Office': []}
-rooms = {'Office': []}
+#rooms = {'Office': []}
 for room_category in rooms.keys():
     for file in os.listdir(os.path.join(args.scene_net_path, room_category)):
         if file.endswith(".obj"):
@@ -97,9 +97,9 @@ for room_category, room_list in rooms.items():
                 num_poses_Living_Room * (room_category == 'Living-room') + \
                 num_poses_Bedroom * (room_category == 'Bedroom')
 
-    #for room in room_list:
-    for poopooo in range(1):
-        room = room_list[0]
+    for room in room_list:
+        # for poopooo in range(1):
+        # room = room_list[0]
 
         # TODO consider only reloading some components
         bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -295,13 +295,13 @@ for room_category, room_list in rooms.items():
 
             hit = np.zeros(8)
             for i in range(hit.shape[0]):
-                hit[i], _, _, _, _, _ = bproc.object.scene_ray_cast(location, [np.cos(i*2*np.pi/hit.shape[0]), np.sin(i*2*np.pi/hit.shape[0]), 0], 0.5)
+                hit[i], _, _, _, _, _ = bproc.object.scene_ray_cast(location, [np.cos(i*2*np.pi/hit.shape[0]), np.sin(i*2*np.pi/hit.shape[0]), 0], 0.7)
 
             if hit.any():
                 continue
 
             # Define a function that samples 6-DoF poses
-            cube_dim = np.random.uniform(0.3, 1)
+            cube_dim = np.random.uniform(0.2, 0.7)
             loc1 = location + [cube_dim, cube_dim, 0.8]
             loc2 = location - [cube_dim, cube_dim, 0.8]
 
@@ -354,8 +354,8 @@ for room_category, room_list in rooms.items():
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['freestyle']
             seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
-            _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, append_to_existing)
-            img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, append_to_existing)
+            _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx)
+            img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx)
 
 
 end = time.time()

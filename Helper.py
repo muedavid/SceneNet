@@ -151,14 +151,14 @@ def save_data(data, seg_data, paths, names, img_idx,append_to_existing):
         data["instance_segmaps"] = instance_segmaps
         data["instance_attribute_maps"] = new_attribute_maps
 
-        bproc.writer.write_hdf5(paths["hdf5"], data, append_to_existing_output=append_to_existing)
+        bproc.writer.write_hdf5(paths["hdf5"], data, append_to_existing_output=True)
 
         bproc.writer.write_coco_annotations(
             paths["coco"],
             instance_segmaps=data["instance_segmaps"],
             instance_attribute_maps=data["instance_attribute_maps"],
             colors=data["colors"],
-            append_to_existing_output=append_to_existing,
+            append_to_existing_output=True,
             mask_encoding_format="rle",
             color_file_format="PNG")
 
