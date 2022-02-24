@@ -20,10 +20,14 @@ start = time.time()
 
 # Important parameter:
 append_to_existing = False
-num_camera = 4
+segmenter = True
+num_camera = 3
 num_poses_Bedroom = 1
-num_poses_Living_Room = 5
+num_poses_Living_Room = 4
 num_poses_Office = 1
+hit_radius = 1
+camera_radius = [0.3, 1.5]
+sample_cube_dims = [0.2, 0.7]
 
 #base_path = '/mnt/extern_hd/BPRandomRoom'
 base_path = '/home/david/BlenderProc/SceneNet'
@@ -68,24 +72,26 @@ else:
     Helper.clean_output(paths_half)
     img_idx = 0
 
+
 # Setting for imagesize and Resolution: Phone
 image_width = 720
 image_height = 1280
-fy = 960.674
-fx = 960.367
-cy = 652.814
-cx = 361.234
-fy_range = [960, 961]
-fx_range = [960, 961]
-cy_range = [650, 654]
-cx_range = [360, 362]
+fy = 951.142
+fx = 954.596
+cy = 647.781
+cx = 362.162
+fy_range = [fy-1, fy+1]
+fx_range = [fx-1, fx+1]
+cy_range = [cy-1, cy+1]
+cx_range = [cx-1, cx+1]
 
 # Setting for imagesize and Resolution: Ground Truth: Real: 512,256
 ratio = 1/2
 
 # get dictionary with possible rooms
 rooms = {'Bedroom': [], 'Living-room': [], 'Office': []}
-#rooms = {'Office': []}
+rooms = {'Living-room': [], 'Office': []}
+
 for room_category in rooms.keys():
     for file in os.listdir(os.path.join(args.scene_net_path, room_category)):
         if file.endswith(".obj"):
@@ -295,13 +301,13 @@ for room_category, room_list in rooms.items():
 
             hit = np.zeros(8)
             for i in range(hit.shape[0]):
-                hit[i], _, _, _, _, _ = bproc.object.scene_ray_cast(location, [np.cos(i*2*np.pi/hit.shape[0]), np.sin(i*2*np.pi/hit.shape[0]), 0], 0.7)
+                hit[i], _, _, _, _, _ = bproc.object.scene_ray_cast(location, [np.cos(i*2*np.pi/hit.shape[0]), np.sin(i*2*np.pi/hit.shape[0]), 0], hit_radius)
 
             if hit.any():
                 continue
 
             # Define a function that samples 6-DoF poses
-            cube_dim = np.random.uniform(0.2, 0.7)
+            cube_dim = np.random.uniform(sample_cube_dims[0], sample_cube_dims[1])
             loc1 = location + [cube_dim, cube_dim, 0.8]
             loc2 = location - [cube_dim, cube_dim, 0.8]
 
@@ -312,15 +318,15 @@ for room_category, room_list in rooms.items():
             # Sample the poses of all screw objects.
             bproc.object.sample_poses(objs_edge, sample_pose_func=sample_pose)
 
-            bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=4, max_simulation_time=20, check_object_interval=1)
+            bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=4, max_simulation_time=25, check_object_interval=1)
 
             cam = 1
             while cam <= num_camera:
 
                 # Sample location
                 LocationCamera = bproc.sampler.shell(center=location_floor,
-                                               radius_min=0.3,
-                                               radius_max=1.5,
+                                               radius_min=camera_radius[0],
+                                               radius_max=camera_radius[1],
                                                elevation_min=25,
                                                elevation_max=89)
                 # Compute rotation based on vector going from location towards poi
@@ -329,7 +335,7 @@ for room_category, room_list in rooms.items():
                 # Add homog cam pose based on location an rotation
                 cam2world_matrix = bproc.math.build_transformation_mat(LocationCamera, rotation_matrix)
 
-                if not bproc.camera.perform_obstacle_in_view_check(cam2world_matrix, {"min": 0.1}, bvh_tree):
+                if not bproc.camera.perform_obstacle_in_view_check(cam2world_matrix, {"min": 0.15}, bvh_tree):
                     continue
 
                 # TODO consider adding check that Camera is not outside of the wall
@@ -354,8 +360,8 @@ for room_category, room_list in rooms.items():
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['freestyle']
             seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
-            _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx)
-            img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx)
+            _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter)
+            img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter)
 
 
 end = time.time()

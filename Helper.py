@@ -96,7 +96,7 @@ def material_randomizer():
             np.random.uniform(position - 0.1, position + 0.1)
 
 
-def save_data(data, seg_data, paths, names, img_idx,append_to_existing):
+def save_data(data, seg_data, paths, names, img_idx, segmenter):
 
     # Use Freestyle Image information together with segmentation to get semantic edges ground truth
     class_segmaps = seg_data["class_segmaps"]
@@ -128,12 +128,16 @@ def save_data(data, seg_data, paths, names, img_idx,append_to_existing):
             freestyle_image = np.array(freestyle_image, dtype=np.uint8)
             freestyle_image = np.where(freestyle_image <= 10, 0, 1)
 
-            class_segmaps[i] = class_segmaps[i] * freestyle_image
+            if segmenter:
+                class_segmaps[i] = class_segmaps[i] * freestyle_image
             class_segmaps[i] = class_segmaps[i].astype(np.uint8)
             class_segmaps_image = Image.fromarray(class_segmaps[i])
             class_segmaps_image.save(paths["class_annotation"] + '/{:04d}.png'.format(img_idx))
 
-            instance_segmaps[i] = np.array(instance_segmaps[i], dtype=np.uint8) * freestyle_image
+            if segmenter:
+                instance_segmaps[i] = np.array(instance_segmaps[i], dtype=np.uint8) * freestyle_image
+            else:
+                instance_segmaps[i] = instance_segmaps.astype(np.unint8)
             for maps in mapping[i]:
                 instance_segmaps[i] = np.where(
                     (instance_segmaps[i] <= maps["old_idx"] + 0.5) & (instance_segmaps[i] >= maps["old_idx"] - 0.5),
