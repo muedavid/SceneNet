@@ -20,16 +20,16 @@ start = time.time()
 
 # Important parameter:
 append_to_existing = False
-segmenter = True
-num_camera = 3
+segmenter = False
+num_camera = 1
 num_poses_Bedroom = 1
-num_poses_Living_Room = 4
+num_poses_Living_Room = 1
 num_poses_Office = 1
 hit_radius = 1
 camera_radius = [0.3, 1.5]
 sample_cube_dims = [0.2, 0.7]
 
-#base_path = '/mnt/extern_hd/BPRandomRoom'
+#base_path = '/mnt/extern_hd/SceneNet'
 base_path = '/home/david/BlenderProc/SceneNet'
 
 # Arguments
@@ -90,7 +90,7 @@ ratio = 1/2
 
 # get dictionary with possible rooms
 rooms = {'Bedroom': [], 'Living-room': [], 'Office': []}
-rooms = {'Living-room': [], 'Office': []}
+rooms = {'Living-room': []}
 
 for room_category in rooms.keys():
     for file in os.listdir(os.path.join(args.scene_net_path, room_category)):
@@ -103,12 +103,12 @@ for room_category, room_list in rooms.items():
                 num_poses_Living_Room * (room_category == 'Living-room') + \
                 num_poses_Bedroom * (room_category == 'Bedroom')
 
-    for room in room_list:
-        # for poopooo in range(1):
-        # room = room_list[0]
+    #for room in room_list:
+    for z in [2]:
+        room = room_list[z]
 
         # TODO consider only reloading some components
-        bpy.ops.wm.read_factory_settings(use_empty=True)
+        #bpy.ops.wm.read_factory_settings(use_empty=True)
         bproc.init()
 
         bpy.ops.scene.freestyle_linestyle_new()
@@ -149,7 +149,7 @@ for room_category, room_list in rooms.items():
 
         names = []
         for obj in objs_edge:
-            obj.enable_rigidbody(active=True, collision_shape="CONVEX_HULL", collision_margin=0.0025)
+            obj.enable_rigidbody(active=True, collision_shape="CONVEX_HULL", collision_margin=0.001)
             names.append(obj.get_name())
             Collection = bpy.data.collections.new(obj.get_name())
             Collection.objects.link(bpy.data.objects[obj.get_name()])
@@ -157,7 +157,7 @@ for room_category, room_list in rooms.items():
         additional_floor = bproc.loader.load_obj(os.path.join(base_path, 'objects', "floor.obj"))
         for obj in additional_floor:
             obj.set_location([0, 0, -0.05])
-            obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL")
+            obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL", collision_margin=0.001)
 
         # Freestyle options
         scene = bpy.data.scenes['Scene']
@@ -168,33 +168,45 @@ for room_category, room_list in rooms.items():
         freestyle_settings.use_culling = True
 
         # Remove LineSet and create new LineSet with logical Names
-        print(freestyle_settings.linesets.keys())
         freestyle_settings.linesets.remove(freestyle_settings.linesets['LineSet'])
 
         for collection in bpy.data.collections:
             if collection.name != 'Wood_Block_Base' and collection.name != 'RigidBodyWorld':
                 lineset = freestyle_settings.linesets.new(collection.name)
-                lineset.edge_type_combination = 'AND'
-                lineset.select_silhouette = False
+                #lineset.edge_type_combination = 'OR'
+                #lineset.select_edge_mark = True
+                #lineset.select_silhouette = False
+                #lineset.select_crease = False
+                #lineset.select_border = False
+                lineset.edge_type_combination = 'OR'
                 lineset.select_crease = True
-                lineset.select_border = True
-                lineset.exclude_border = True
-                lineset.select_material_boundary = True
-                lineset.exclude_material_boundary = True
+                lineset.select_edge_mark = True
+                lineset.select_border = False
+                lineset.select_silhouette = False
+
 
                 lineset.linestyle.color = (1, 1, 1)
-                lineset.linestyle.thickness = 1.0
+                # TODO only for wood_side_long, maybe
+                lineset.linestyle.thickness = 2.0
                 lineset.linestyle.thickness_position = 'INSIDE'
 
                 lineset.select_by_collection = True
                 lineset.collection = bpy.data.collections[collection.name]
             elif collection.name == 'Wood_Block_Base':
+                # TODO decide which edges are drawn
                 lineset = freestyle_settings.linesets.new(collection.name)
                 lineset.edge_type_combination = 'AND'
                 lineset.select_edge_mark = True
+                lineset.select_silhouette = False
+                lineset.select_crease = True
+                lineset.select_border = False
 
                 lineset.linestyle.color = (1, 1, 1)
-                lineset.linestyle.thickness = 1.0
+                if collection.name == 'Wood_Side_Long.001' or collection.name == 'Wood_Side_Long.002' or collection.name == 'Wood_Side_Short.001' or collection.name == 'Wood_Side_Short.002':
+                    print("\n \n \n hallooooo \n \n \n")
+                    lineset.linestyle.thickness = 4.0
+                else:
+                    lineset.linestyle.thickness = 2.0
                 lineset.linestyle.thickness_position = 'INSIDE'
 
                 lineset.select_by_collection = True
@@ -218,24 +230,40 @@ for room_category, room_list in rooms.items():
         for obj in objs:
             # For each material of the object
             for i in range(len(obj.get_materials())):
-                # In 40% of all cases
-                if np.random.uniform(0, 1) <= 0.1:
+                # In 30% of all cases
+                if np.random.uniform(0, 1) <= 0.3:
                     # Replace the material with a random one from cc materials
                     obj.set_material(i, random.choice(cc_materials))
 
-                id = obj.get_cp("category_id")
-                id_chair = label_mapping.id_from_label("chair")
-                id_table = label_mapping.id_from_label("table")
-                id_sofa = label_mapping.id_from_label("sofa")
-                id_bed = label_mapping.id_from_label("bed")
-                id_desk = label_mapping.id_from_label("desk")
-                id_other_struct = label_mapping.id_from_label("otherstructure")
-                id_other_furniture = label_mapping.id_from_label("otherfurniture")
-                id_check = id == id_chair or id == id_table or id == id_sofa or id == id_bed or \
-                        id == id_desk or id_other_struct or id_other_furniture
+                if obj.get_name() == "carpet":
+                    #print("\n \n \n hallo \n \n \n")
+                    #print("\n \n \n \n \n")
+                    #print(obj.get_cp("category_id"))
+                    obj.enable_rigidbody(active=False, collision_margin=0.005)
 
-                if id_check == id_chair or id == id_table or id == id_sofa or id == id_bed or id == id_desk:
-                    obj.enable_rigidbody(active=False)
+                id = obj.get_cp("category_id")
+                # find id mapping: https://github.com/DLR-RM/BlenderProc/blob/main/blenderproc/resources/id_mappings/nyu_idset.csv
+                ids = [2, 3, 4, 5, 6, 7, 10, 14, 15, 17, 18, 20, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 39, 40]
+                # 36, 37, 38]
+                #id_chair = label_mapping.id_from_label("chair")
+                #id_table = label_mapping.id_from_label("table")
+                #id_sofa = label_mapping.id_from_label("sofa")
+                #id_bed = label_mapping.id_from_label("bed")
+                #id_desk = label_mapping.id_from_label("desk")
+                #id_other_struct = label_mapping.id_from_label("otherstructure")
+                #id_other_furniture = label_mapping.id_from_label("otherfurniture")
+                #id_bookshelf = label_mapping.id_from_label("bookshelf")
+
+                #id_check = id == id_chair or id == id_table or id == id_sofa or id == id_bed or \
+                #        id == id_desk or id_other_struct or id_other_furniture or id_carpet
+
+                id_check = id in ids
+
+                if id_check:
+                    if id == 2:
+                        obj.enable_rigidbody(active=False, collision_margin=0.005)
+                    else:
+                        obj.enable_rigidbody(active=False, collision_margin=0.003)
 
         # Now load all textures of the materials that were assigned to at least one object
         bproc.loader.load_ccmaterials(args.cc_material_path, fill_used_empty_materials=True)
@@ -282,9 +310,6 @@ for room_category, room_list in rooms.items():
         poses = 0
         tries = 0
 
-        # Clear all key frames from the previous run
-        bproc.utility.reset_keyframes()
-
         while tries < 10000 and poses < num_poses:
 
             bproc.utility.reset_keyframes()
@@ -318,7 +343,7 @@ for room_category, room_list in rooms.items():
             # Sample the poses of all screw objects.
             bproc.object.sample_poses(objs_edge, sample_pose_func=sample_pose)
 
-            bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=4, max_simulation_time=25, check_object_interval=1)
+            bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=4, max_simulation_time=30, check_object_interval=1)
 
             cam = 1
             while cam <= num_camera:
@@ -360,8 +385,8 @@ for room_category, room_list in rooms.items():
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['freestyle']
             seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
-            _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter)
-            img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter)
+            # _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter)
+            # img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter)
 
 
 end = time.time()

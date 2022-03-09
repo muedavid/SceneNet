@@ -126,18 +126,19 @@ def save_data(data, seg_data, paths, names, img_idx, segmenter):
             freestyle_image = Image.open(paths['freestyle'] + '/Freestyle{:04d}.png'.format(i))
 
             freestyle_image = np.array(freestyle_image, dtype=np.uint8)
-            freestyle_image = np.where(freestyle_image <= 10, 0, 1)
+            freestyle_image = np.where(freestyle_image <= 2, 0, 1)
 
-            if segmenter:
+            if not segmenter:
                 class_segmaps[i] = class_segmaps[i] * freestyle_image
             class_segmaps[i] = class_segmaps[i].astype(np.uint8)
-            class_segmaps_image = Image.fromarray(class_segmaps[i])
+            # TODO
+            class_segmaps_image = Image.fromarray(class_segmaps[i]*80)
             class_segmaps_image.save(paths["class_annotation"] + '/{:04d}.png'.format(img_idx))
 
-            if segmenter:
+            if not segmenter:
                 instance_segmaps[i] = np.array(instance_segmaps[i], dtype=np.uint8) * freestyle_image
             else:
-                instance_segmaps[i] = instance_segmaps.astype(np.unint8)
+                instance_segmaps[i] = instance_segmaps[i].astype(np.uint8)
             for maps in mapping[i]:
                 instance_segmaps[i] = np.where(
                     (instance_segmaps[i] <= maps["old_idx"] + 0.5) & (instance_segmaps[i] >= maps["old_idx"] - 0.5),

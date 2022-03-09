@@ -1,13 +1,21 @@
 #!/bin/bash
 
 pw=IhD999777
-path_script1=/SceneNet/main.py
-path_data1=/SceneNet/output
-path_data2=/SceneNet/outputAORUS
+ip=192.168.1.2
+client=/home/david/BlenderProc/SceneNet
+server=/mnt/extern_hd/SceneNet
+script1=/main.py
+script2=/Helper.py
+blend=/objects
+data_client=/outputExtern
+data_server=/output
 
-sshpass -p $pw scp /home/david/BlenderProc$path_script1 david@192.168.1.2:/mnt/extern_hd$path_script1
+sshpass -p $pw scp $client$script1 david@$ip:$server$script1
+sshpass -p $pw scp $client$script2 david@$ip:$server$script2
+sshpass -p $pw scp -r $client$blend david@$ip:$server$blend
+
 
 if [ "$1" == data ]
 then
-sshpass -p $pw scp -r david@192.168.1.2:/mnt/extern_hd$path_data1 /home/david/BlenderProc$path_data2
+sshpass -p $pw scp -r david@$ip:$server$data_server $client$data_client
 fi
