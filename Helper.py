@@ -206,3 +206,17 @@ def get_idx(paths):
             if index.isdigit():
                 img_idx = max(img_idx, int(index) + 1)
     return img_idx
+
+def ClearAllObjectsSceneNet(objs, mats):
+    for o in objs:
+        object = bpy.data.objects[o.get_name()]
+        mesh_name = object.data.name
+        bpy.data.objects.remove(object)
+        bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
+    for m in bpy.data.materials:
+        if m.users == 0:
+            bpy.data.materials.remove(m)
+
+    for img in bpy.data.images:
+        bpy.data.images.remove(img)
+

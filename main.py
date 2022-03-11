@@ -14,22 +14,17 @@ start = time.time()
 
 np.set_printoptions(threshold=sys.maxsize)
 
-
-# TODO
-# Range for Camera Options and remove ratio
-# Coco Annotation writer: Check Results
-# iterate through different rooms
-
 # Important parameter:
 append_to_existing = False
 segmenter = False
-num_camera = 1
+num_camera = 3
 num_poses_Bedroom = 1
-num_poses_Living_Room = 1
+num_poses_Living_Room = 4
 num_poses_Office = 1
 hit_radius = 1
 camera_radius = [0.3, 1.5]
 sample_cube_dims = [0.2, 0.7]
+samples = 10
 
 #base_path = '/mnt/extern_hd/SceneNet'
 base_path = '/home/david/BlenderProc/SceneNet'
@@ -76,17 +71,6 @@ else:
     Helper.clean_output(paths_half)
     img_idx = 0
 
-def ClearAll():
-    for c in bpy.context.scene.collection.children:
-        bpy.context.scene.collection.children.unlink(c)
-
-    for c in bpy.data.collections:
-        if not c.users:
-            bpy.data.collections.remove(c)
-
-    for o in bpy.data.objects:
-            bpy.data.objects.remove(o)
-
 # Setting for imagesize and Resolution: Tablet
 image_width = 720
 image_height = 1280
@@ -99,8 +83,6 @@ fx_range = [fx-1, fx+1]
 cy_range = [cy-1, cy+1]
 cx_range = [cx-1, cx+1]
 
-# TODO
-ratio = 1/2
 ratio = 1/2
 
 # get dictionary with possible rooms
@@ -117,6 +99,113 @@ for room_category in rooms.keys():
         if file.endswith(".obj"):
             rooms[room_category].append(file)
 
+bproc.init()
+
+bpy.data.scenes['Scene'].render.resolution_percentage = 100
+bpy.data.scenes['Scene'].render.engine = 'CYCLES'
+bproc.renderer.set_noise_threshold(0.05)
+bpy.data.scenes['Scene'].render.film_transparent = True
+# bproc.renderer.set_max_amount_of_samples(1024)
+bproc.renderer.set_denoiser("INTEL")
+
+scene_collection = bpy.data.scenes['Scene'].collection
+
+# Define New View Layer for Implementation
+Objects = bpy.data.collections.new('Objects')
+scene_collection.children.link(Objects)
+LineArt = bpy.data.collections.new('LineArt')
+scene_collection.children.link(LineArt)
+
+# Options for grease pencil
+bpy.data.scenes['Scene'].grease_pencil_settings.antialias_threshold = 0
+
+# Add View Layer for Rendering
+bpy.data.scenes['Scene'].view_layers.new('edge')
+edge_render_layer = bpy.data.scenes['Scene'].node_tree.nodes.new('CompositorNodeRLayers')
+edge_render_layer.name = 'Edge Render Layers'
+edge_render_layer.layer = 'edge'
+image_render_layer = bpy.data.scenes['Scene'].node_tree.nodes['Render Layers']
+image_render_layer.name = 'Image Render Layers'
+
+# Define Output for rendered edge Images
+bpy.data.scenes['Scene'].node_tree.nodes.new("CompositorNodeOutputFile")
+output_file_edges = bpy.data.scenes['Scene'].node_tree.nodes['File Output']
+bpy.data.scenes['Scene'].node_tree.links.new(edge_render_layer.outputs['Image'], output_file_edges.inputs['Image'])
+#output_file_edges.base_path = '/home/david/BlenderProc'
+output_file_edges.file_slots['Image'].path = ''
+output_file_edges.format.file_format = 'PNG'
+output_file_edges.format.color_mode = 'BW'
+
+bpy.data.scenes['Scene'].view_settings.view_transform = 'Standard'
+
+# Load Object to get 3D pose
+objs_edge = bproc.loader.load_blend(args.objects)
+sheet = bproc.filter.by_attr(objs_edge,"name","Wood_Sheet.*", regex=True)
+bar = bproc.filter.by_attr(objs_edge,"name","Wood_Bar.*", regex=True)
+frame = bproc.filter.by_attr(objs_edge,"name","Wood_Side.*", regex=True)
+base = bproc.filter.by_attr(objs_edge,"name","Wood_Block.*", regex=True)
+
+# set Id and objects to rigid bodies
+for obj in base:
+    obj.set_cp("category_id", 1)
+for obj in bar:
+    obj.set_cp("category_id", 2)
+for obj in frame:
+    obj.set_cp("category_id", 2)
+for obj in sheet:
+    obj.set_cp("category_id", 3)
+
+names = []
+for obj in objs_edge:
+    obj.enable_rigidbody(active=True, collision_shape="CONVEX_HULL", collision_margin=0.001)
+    names.append(obj.get_name())
+
+    # Set all Objects in a Collection: used for render layer
+    bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
+    bpy.data.scenes['Scene'].collection.objects.unlink(bpy.data.objects[obj.get_name()])
+
+    # Create GPencil Object and LineArt Modifier
+    name = obj.get_name() + '_gpencil'
+    gpencil = bpy.data.grease_pencils.new(name)
+    gpencil_layer = gpencil.layers.new(name)
+    gpencil_obj = bpy.data.objects.new(name, gpencil)
+    LineArt = gpencil_obj.grease_pencil_modifiers.new(name, 'GP_LINEART')
+
+    # Set GPencil Object in a Collection: used for render layre
+    bpy.data.collections['LineArt'].objects.link(bpy.data.objects[name])
+
+    # Define Inputs into LineArt Modifier
+    LineArt.source_type = 'OBJECT'
+    LineArt.source_object = bpy.data.objects[obj.get_name()]
+
+    # Define Material for gpencil for each object 1
+    mat = bpy.data.materials.new(obj.get_name())
+    bpy.data.materials.create_gpencil_data(mat)
+
+    gpencil_obj.data.materials.append(mat)
+    LineArt.target_material = mat
+
+    LineArt.target_layer = gpencil.name
+
+    # Options for LineArt
+    LineArt.stroke_depth_offset = 0
+    LineArt.thickness = 1
+    LineArt.use_intersection = False
+    LineArt.use_loose = False
+    LineArt.use_material = False
+    LineArt.use_contour = False
+    LineArt.use_edge_overlap = True
+    gpencil_layer.use_lights = False
+    gpencil.stroke_thickness_space = 'SCREENSPACE'
+    gpencil.stroke_depth_order = '3D'
+
+additional_floor = bproc.loader.load_obj(os.path.join(base_path, 'objects', "floor.obj"))
+for obj in additional_floor:
+    obj.set_location([0, 0, -0.05])
+    obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL", collision_margin=0.001)
+    bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
+    bpy.data.scenes['Scene'].collection.objects.unlink(bpy.data.objects[obj.get_name()])
+
 # rooms:
 for room_category, room_list in rooms.items():
     num_poses = num_poses_Office * (room_category == 'Office') + \
@@ -124,219 +213,15 @@ for room_category, room_list in rooms.items():
                 num_poses_Bedroom * (room_category == 'Bedroom')
 
     #for room in room_list:
-    for z in [0]:
+    for z in [0, 1, 2, 3]:
         room = room_list[z]
-
-        # TODO Check if it works out, Consider only reloading some components
-        #bpy.ops.wm.read_factory_settings(use_empty=False)
-        #bpy.context.collection.objects.link(bpy.data.objects['Cube'])
-        #print(bpy.context.object)
-
-        ClearAll()
-
-        #bpy.ops.mesh.add_primitive_cube()
-
-        #print(bpy.context.object.mode)
-
-        #bpyscene = bpy.context.scene
-
-        # Create an empty mesh and the object.
-        #mesh = bpy.data.meshes.new('Basic_Cube')
-        #basic_cube = bpy.data.objects.new("Basic_Cube", mesh)
-
-        # Add the object into the scene.
-        #bpyscene.collection.objects.link(basic_cube)
-
-        bproc.init()
-
-        #bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = np.array([1,1,1,0])
-        #bpy.data.worlds["World"].color = np.array([1,1,1])
-
-        bpy.ops.scene.freestyle_linestyle_new()
-
-        # rendering options used as in bproc
-        scene = bpy.data.scenes['Scene']
-        scene.render.resolution_percentage = 100
-        scene.render.engine = 'CYCLES'
-        bproc.renderer.set_noise_threshold(0.05)
-        scene.render.film_transparent = True
-        # TODO
-        # bproc.renderer.set_max_amount_of_samples(1024)
-        bproc.renderer.set_max_amount_of_samples(10)
-        bproc.renderer.set_denoiser("INTEL")
-
-        # TODO: new Implementation ###
-        scene_collection = scene.collection
-
-        # Define New View Layer for Implementation
-        Objects = bpy.data.collections.new('Objects')
-        scene_collection.children.link(Objects)
-        LineArt = bpy.data.collections.new('LineArt')
-        scene_collection.children.link(LineArt)
-
-        # Options for grease pencil
-        scene.grease_pencil_settings.antialias_threshold = 0
-
-        # Add View Layer for Rendering
-        scene.view_layers.new('edge')
-        edge_render_layer = scene.node_tree.nodes.new('CompositorNodeRLayers')
-        edge_render_layer.name = 'Edge Render Layers'
-        edge_render_layer.layer = 'edge'
-        image_render_layer = scene.node_tree.nodes['Render Layers']
-        image_render_layer.name = 'Image Render Layers'
-
-        # Define Output for rendered edge Images
-        scene.node_tree.nodes.new("CompositorNodeOutputFile")
-        output_file_edges = scene.node_tree.nodes['File Output']
-        scene.node_tree.links.new(edge_render_layer.outputs['Image'], output_file_edges.inputs['Image'])
-        output_file_edges.base_path = '/home/david/BlenderProc'
-        output_file_edges.file_slots['Image'].path = ''
-        output_file_edges.format.file_format = 'PNG'
-        output_file_edges.format.color_mode = 'BW'
-
-        scene.view_settings.view_transform = 'Standard'
-        # TODO: new Implementation ###
 
         # Load the scenenet room and label its objects with category ids based on the nyu mapping
         label_mapping = bproc.utility.LabelIdMapping.from_csv(bproc.utility.resolve_resource(os.path.join('id_mappings', 'nyu_idset.csv')))
         objs = bproc.loader.load_scenenet(os.path.join(args.scene_net_path, room_category, room), args.scene_texture_path, label_mapping)
 
-        # Load Object to get 3D pose
-        objs_edge = bproc.loader.load_blend(args.objects)
-        sheet = bproc.filter.by_attr(objs_edge,"name","Wood_Sheet.*", regex=True)
-        bar = bproc.filter.by_attr(objs_edge,"name","Wood_Bar.*", regex=True)
-        frame = bproc.filter.by_attr(objs_edge,"name","Wood_Side.*", regex=True)
-        base = bproc.filter.by_attr(objs_edge,"name","Wood_Block.*", regex=True)
-
         # randomize material
         Helper.material_randomizer()
-
-        # set Id and objects to rigid bodies
-        for obj in base:
-            obj.set_cp("category_id", 1)
-        for obj in bar:
-            obj.set_cp("category_id", 2)
-        for obj in frame:
-            obj.set_cp("category_id", 2)
-        for obj in sheet:
-            obj.set_cp("category_id", 3)
-
-        names = []
-        for obj in objs_edge:
-            obj.enable_rigidbody(active=True, collision_shape="CONVEX_HULL", collision_margin=0.001)
-            names.append(obj.get_name())
-
-            # Set all Objects in a Collection: used for render layer
-            bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
-            scene.collection.objects.unlink(bpy.data.objects[obj.get_name()])
-
-            # Create GPencil Object and LineArt Modifier
-            name = obj.get_name() + '_gpencil'
-            gpencil = bpy.data.grease_pencils.new(name)
-            gpencil_layer = gpencil.layers.new(name)
-            gpencil_obj = bpy.data.objects.new(name, gpencil)
-            LineArt = gpencil_obj.grease_pencil_modifiers.new(name, 'GP_LINEART')
-
-            # Set GPencil Object in a Collection: used for render layre
-            bpy.data.collections['LineArt'].objects.link(bpy.data.objects[name])
-
-            # Define Inputs into LineArt Modifier
-            LineArt.source_type = 'OBJECT'
-            LineArt.source_object = bpy.data.objects[obj.get_name()]
-
-            # Define Material for gpencil for each object 1
-            mat = bpy.data.materials.new(obj.get_name())
-            bpy.data.materials.create_gpencil_data(mat)
-
-            gpencil_obj.data.materials.append(mat)
-            LineArt.target_material = mat
-
-            LineArt.target_layer = gpencil.name
-
-            # Options for LineArt
-            LineArt.stroke_depth_offset = 0
-            LineArt.thickness = 1
-            LineArt.use_intersection = False
-            LineArt.use_loose = False
-            LineArt.use_material = False
-            LineArt.use_contour = False
-            LineArt.use_edge_overlap = True
-            gpencil_layer.use_lights = False
-            gpencil.stroke_thickness_space = 'SCREENSPACE'
-            gpencil.stroke_depth_order = '3D'
-
-        additional_floor = bproc.loader.load_obj(os.path.join(base_path, 'objects', "floor.obj"))
-        for obj in additional_floor:
-            obj.set_location([0, 0, -0.05])
-            obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL", collision_margin=0.001)
-            bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
-            scene.collection.objects.unlink(bpy.data.objects[obj.get_name()])
-
-        """
-        # Freestyle options
-        scene = bpy.data.scenes['Scene']
-        scene.render.use_freestyle = True
-        freestyle_settings = scene.view_layers['ViewLayer'].freestyle_settings
-        freestyle_settings.as_render_pass = True
-        freestyle_settings.crease_angle = 140/180*np.pi
-        freestyle_settings.use_culling = True
-
-        # Remove LineSet and create new LineSet with logical Names
-        freestyle_settings.linesets.remove(freestyle_settings.linesets['LineSet'])
-
-        for collection in bpy.data.collections:
-            if collection.name != 'Wood_Block_Base' and collection.name != 'RigidBodyWorld':
-                lineset = freestyle_settings.linesets.new(collection.name)
-                #lineset.edge_type_combination = 'OR'
-                #lineset.select_edge_mark = True
-                #lineset.select_silhouette = False
-                #lineset.select_crease = False
-                #lineset.select_border = False
-                lineset.edge_type_combination = 'OR'
-                lineset.select_crease = True
-                lineset.select_edge_mark = True
-                lineset.select_border = False
-                lineset.select_silhouette = False
-
-
-                lineset.linestyle.color = (1, 1, 1)
-                # TODO only for wood_side_long, maybe
-                lineset.linestyle.thickness = 2.0
-                lineset.linestyle.thickness_position = 'INSIDE'
-
-                lineset.select_by_collection = True
-                lineset.collection = bpy.data.collections[collection.name]
-            elif collection.name == 'Wood_Block_Base':
-                # TODO decide which edges are drawn
-                lineset = freestyle_settings.linesets.new(collection.name)
-                lineset.edge_type_combination = 'AND'
-                lineset.select_edge_mark = True
-                lineset.select_silhouette = False
-                lineset.select_crease = True
-                lineset.select_border = False
-
-                lineset.linestyle.color = (1, 1, 1)
-                if collection.name == 'Wood_Side_Long.001' or collection.name == 'Wood_Side_Long.002' or collection.name == 'Wood_Side_Short.001' or collection.name == 'Wood_Side_Short.002':
-                    print("\n \n \n hallooooo \n \n \n")
-                    lineset.linestyle.thickness = 4.0
-                else:
-                    lineset.linestyle.thickness = 2.0
-                lineset.linestyle.thickness_position = 'INSIDE'
-
-                lineset.select_by_collection = True
-                lineset.collection = bpy.data.collections[collection.name]
-
-        # Save freestyle image
-        nodes = scene.node_tree.nodes
-        render_layers = nodes['Render Layers']
-        nodes.new("CompositorNodeOutputFile")
-        output_file_freestyle = scene.node_tree.nodes['File Output']
-        scene.node_tree.links.new(render_layers.outputs['Freestyle'], output_file_freestyle.inputs['Image'])
-        output_file_freestyle.base_path = paths_full['freestyle']
-        output_file_freestyle.file_slots['Image'].path = 'Freestyle'
-        output_file_freestyle.format.file_format = 'PNG'
-        output_file_freestyle.format.color_mode = 'BW'
-        """
 
         # Load all recommended cc materials, however don't load their textures yet
         cc_materials = bproc.loader.load_ccmaterials(args.cc_material_path, preload=True)
@@ -361,17 +246,18 @@ for room_category, room_list in rooms.items():
 
                 if id_check:
                     if id == 2:
-                        obj.enable_rigidbody(active=False, collision_margin=0.005)
+                        obj.enable_rigidbody(active=False, collision_margin=0.001)
                     else:
-                        obj.enable_rigidbody(active=False, collision_margin=0.003)
+                        obj.enable_rigidbody(active=False, collision_margin=0.001)
 
 
             # Set all Objects in a Collection: used for render layer
             bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
-            scene.collection.objects.unlink(bpy.data.objects[obj.get_name()])
+            bpy.data.scenes['Scene'].collection.objects.unlink(bpy.data.objects[obj.get_name()])
 
         # Now load all textures of the materials that were assigned to at least one object
         bproc.loader.load_ccmaterials(args.cc_material_path, fill_used_empty_materials=True)
+
 
         # In some scenes floors, walls and ceilings are one object that needs to be split first
         # Collect all walls
@@ -482,21 +368,21 @@ for room_category, room_list in rooms.items():
             cy = np.random.uniform(cy_range[0], cy_range[1])
             K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
-            scene = bpy.data.scenes["Scene"]
-
-            #TODO: remove bproc.render for instance, as already called segmentation rendering
-
             # Rendering Images at half Resolution
             bproc.camera.set_intrinsics_from_K_matrix(K, int(image_width), int(image_height))
-
+            bproc.renderer.set_max_amount_of_samples(samples)
+            bpy.data.scenes['Scene'].cycles.use_denoising = True
             data = bproc.renderer.render()
+            # Set rendering, such that computation is faster
+            bproc.renderer.set_max_amount_of_samples(1)
+            bpy.data.scenes['Scene'].cycles.use_denoising = False
 
             # LineArt at whole resolution
-            scene.view_layers['edge'].layer_collection.children['Objects'].exclude = False
-            scene.view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
+            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
+            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
             bpy.ops.object.lineart_bake_strokes_all()
-            scene.view_layers['edge'].layer_collection.children['Objects'].exclude = True
-            scene.view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
+            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
+            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
 
             # class
             for obj in objs_edge:
@@ -504,7 +390,6 @@ for room_category, room_list in rooms.items():
                 color = obj.get_cp("category_id") * 5 / 255.0
                 mat.grease_pencil.color = np.array([color, color, color, 1])
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_class']
-            # TODO: Set Rendering steps to minimum
             bproc.renderer.render()
 
             # instance
@@ -515,21 +400,20 @@ for room_category, room_list in rooms.items():
                 k += 1
                 mat.grease_pencil.color = np.array([color, color, color, 1])
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_instance']
-            bproc.renderer.render()
+            #bproc.renderer.render()
             seg_data_full = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
 
 
             # Rendering Images at half Resolution
             bproc.camera.set_intrinsics_from_K_matrix(K * ratio, int(image_width * ratio), int(image_height * ratio))
-            scene = bpy.data.scenes["Scene"]
 
             # LineArt at whole resolution
-            scene.view_layers['edge'].layer_collection.children['Objects'].exclude = False
-            scene.view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
+            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
+            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
             bpy.ops.object.lineart_bake_strokes_all()
-            scene.view_layers['edge'].layer_collection.children['Objects'].exclude = True
-            scene.view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
+            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
+            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
 
             # class
             for obj in objs_edge:
@@ -547,29 +431,14 @@ for room_category, room_list in rooms.items():
                 k += 1
                 mat.grease_pencil.color = np.array([color, color, color, 1])
             bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art_instance']
-            bproc.renderer.render()
+            #bproc.renderer.render()
             seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
-
-
-
-
-            # bproc.camera.set_intrinsics_from_K_matrix(K * ratio, int(image_width * ratio), int(image_height * ratio))
-            # for obj in objs_edge:
-            #     mat = bpy.data.materials[obj.get_name()]
-            #     color = obj.get_cp("category_id") * 10 / 255.0
-            #     mat.grease_pencil.color = np.array([color, color, color, 1])
-            # bpy.ops.object.lineart_bake_strokes_all()
-            # scene.view_layers['edge'].layer_collection.children['Objects'].exclude = True
-            # scene.view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
-            # bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art']
-            # seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
             _ = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping)
             #img_idx = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping)
             img_idx = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter, color_mapping)
 
-            ClearAll()
-
+        Helper.ClearAllObjectsSceneNet(objs, cc_materials)
 
 end = time.time()
 with open('time.txt', 'w') as f:
