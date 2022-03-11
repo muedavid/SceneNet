@@ -96,7 +96,7 @@ def material_randomizer():
             np.random.uniform(position - 0.1, position + 0.1)
 
 
-def save_data(data, seg_data, paths, names, img_idx, segmenter):
+def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping):
 
     # Use Freestyle Image information together with segmentation to get semantic edges ground truth
     class_segmaps = seg_data["class_segmaps"]
@@ -107,6 +107,10 @@ def save_data(data, seg_data, paths, names, img_idx, segmenter):
 
     new_attribute_maps = []
     mapping = []
+
+    # TODO: Only run segmentation if required:  adaptive number of inputs into function,
+    #                                           check which elements are in image,
+    #                                           simplify new attribute maps
 
     if len(colors) == len(class_segmaps):
 
@@ -123,28 +127,39 @@ def save_data(data, seg_data, paths, names, img_idx, segmenter):
         # Save in CaseNet format
         for i in range(num_frames):
 
-            freestyle_image = Image.open(paths['freestyle'] + '/Freestyle{:04d}.png'.format(i))
-
-            freestyle_image = np.array(freestyle_image, dtype=np.uint8)
-            freestyle_image = np.where(freestyle_image <= 2, 0, 1)
-
             if not segmenter:
-                class_segmaps[i] = class_segmaps[i] * freestyle_image
+                class_image = Image.open(paths['line_art_class'] + '/{:04d}.png'.format(i))
+                class_image = np.array(class_image, dtype=np.uint8)
+                class_image = np.where(class_image <= 2, 0, class_image)
+                for cat in range(1, 4):
+                    class_image = np.where((class_image <= color_mapping[str(cat)] + 1) &
+                                           (class_image >= color_mapping[str(cat)] - 1), cat, class_image)
+
+                #print(class_image)
+                class_segmaps[i] = class_image
             class_segmaps[i] = class_segmaps[i].astype(np.uint8)
-            # TODO
+
             class_segmaps_image = Image.fromarray(class_segmaps[i]*80)
             class_segmaps_image.save(paths["class_annotation"] + '/{:04d}.png'.format(img_idx))
 
             if not segmenter:
-                instance_segmaps[i] = np.array(instance_segmaps[i], dtype=np.uint8) * freestyle_image
+                instance_image = Image.open(paths['line_art_instance'] + '/{:04d}.png'.format(i))
+                instance_image = np.array(instance_image, dtype=np.uint8)
+                instance_image = np.where(instance_image <= 2, 0, instance_image)
+                for inst in range(1, len(names)+1):
+                    instance_image = np.where((instance_image <= color_mapping[str(inst)] + 1) &
+                                              (instance_image >= color_mapping[str(inst)] - 1), inst, instance_image)
+                instance_segmaps[i] = instance_image
+                #print(instance_image)
             else:
                 instance_segmaps[i] = instance_segmaps[i].astype(np.uint8)
-            for maps in mapping[i]:
-                instance_segmaps[i] = np.where(
-                    (instance_segmaps[i] <= maps["old_idx"] + 0.5) & (instance_segmaps[i] >= maps["old_idx"] - 0.5),
-                    maps["new_idx"], instance_segmaps[i])
+                # perform mapping
+                for maps in mapping[i]:
+                    instance_segmaps[i] = np.where(
+                        (instance_segmaps[i] <= maps["old_idx"] + 0.5) & (instance_segmaps[i] >= maps["old_idx"] - 0.5),
+                        maps["new_idx"], instance_segmaps[i])
             instance_segmaps[i] = instance_segmaps[i].astype(np.uint8)
-            instance_segmaps_image = Image.fromarray(instance_segmaps[i])
+            instance_segmaps_image = Image.fromarray(instance_segmaps[i]*15)
             instance_segmaps_image.save(paths["instance_annotation"] + '/{:04d}.png'.format(img_idx))
 
             color_image = Image.fromarray(np.array(colors[i], dtype=np.uint8))
