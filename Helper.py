@@ -6,10 +6,51 @@ import os
 import shutil
 
 
-def material_randomizer():
+def get_material_color():
+
+        color = []
+        pos = []
+
+        # Material 1:
+        color_array = np.zeros((3, 4))
+        pos_array = np.zeros((3, 1))
+        for j in range(3):
+            # color
+            color_array[j, :] = np.array(bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].color)
+            pos_array[j, :] = np.array(bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].position)
+        color.append(color_array)
+        pos.append(pos_array)
+
+        # Material 2:
+        color_array = np.zeros((2, 3, 4))
+        pos_array = np.zeros((2, 3, 1))
+        for k in range(1, 3):
+            for j in range(3):
+                # color
+                color_array[k-1, j, :] = bpy.data.materials['2'].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].color
+                pos_array[k-1, j, :] = bpy.data.materials['2'].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].position
+
+        color.append(color_array)
+        pos.append(pos_array)
+
+        color_array = np.zeros((3, 4))
+        pos_array = np.zeros((3, 1))
+        for j in range(3):
+            # color
+            color_array[j, :] = np.array(
+                bpy.data.materials['10'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].color)
+            pos_array[j, :] = np.array(
+                bpy.data.materials['10'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].position)
+        color.append(color_array)
+        pos.append(pos_array)
+        return color, pos
+
+
+def material_randomizer(material_color, material_pos):
 
     # Color
-    color_diff = 0.03
+    color_diff = 0.05
+    pos_diff = 0.03
 
     # Material Base Block
     if np.random.uniform(0, 1) <= 0.5:
@@ -26,24 +67,24 @@ def material_randomizer():
         # set new values
         if i == numerate[0] or not repeat:
 
-            color1 = mat_base.nodes['ColorRamp'].color_ramp.elements[0].color
-            color2 = mat_base.nodes['ColorRamp'].color_ramp.elements[1].color
-            color3 = mat_base.nodes['ColorRamp'].color_ramp.elements[2].color
-            color1 = np.random.uniform(color1 - color_diff * np.array([1, 1, 1, 1]),
-                                       color1 + color_diff * np.array([1, 1, 1, 1]))
-            color2 = np.random.uniform(color2 - color_diff * np.array([1, 1, 1, 1]),
-                                       color2 + color_diff * np.array([1, 1, 1, 1]))
-            color3 = np.random.uniform(color3 - color_diff * np.array([1, 1, 1, 1]),
-                                       color3 + color_diff * np.array([1, 1, 1, 1]))
-            position1 = mat_base.nodes['ColorRamp'].color_ramp.elements[0].position
-            position2 = mat_base.nodes['ColorRamp'].color_ramp.elements[1].position
-            position3 = mat_base.nodes['ColorRamp'].color_ramp.elements[2].position
-            position1 = np.random.uniform(position1-0.1,position1+0.1)
-            position2 = np.random.uniform(position2 - 0.1, position2 + 0.1)
-            position3 = np.random.uniform(position3 - 0.1, position3 + 0.1)
+            color1 = material_color[2][0, :]
+            color2 = material_color[2][1, :]
+            color3 = material_color[2][2, :]
+            color1 = np.random.uniform(color1 - color_diff * np.array([1, 1, 1, 0]),
+                                       color1 + color_diff * np.array([1, 1, 1, 0]))
+            color2 = np.random.uniform(color2 - color_diff * np.array([1, 1, 1, 0]),
+                                       color2 + color_diff * np.array([1, 1, 1, 0]))
+            color3 = np.random.uniform(color3 - color_diff * np.array([1, 1, 1, 0]),
+                                       color3 + color_diff * np.array([1, 1, 1, 0]))
+            position1 = material_pos[2][0, :]
+            position2 = material_pos[2][1, :]
+            position3 = material_pos[2][2, :]
+            position1 = np.random.uniform(position1 - pos_diff, position1 + pos_diff)
+            position2 = np.random.uniform(position2 - pos_diff, position2 + pos_diff)
+            position3 = np.random.uniform(position3 - pos_diff, position3 + pos_diff)
             musgrave_scale = np.random.uniform(2, 5)
             musgrave_lacunarity = np.random.uniform(0.5, 1.5)
-            mapping_scale = np.random.uniform(0, 2)
+            mapping_scale = np.random.triangular(0, 0.1, 1)
             noise_scale = np.random.uniform(1, 15)
             noise_roughness = np.random.uniform(0.6, 1)
 
@@ -67,13 +108,13 @@ def material_randomizer():
         for j in range(3):
             for k in range(1, 3):
                 # color
-                color = bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].color
+                color = material_color[1][k-1, j, :]
                 bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].color =\
-                    np.random.uniform(color - color_diff * np.array([1, 1, 1, 1]), color + color_diff * np.array([1, 1, 1, 1]))
+                    np.random.uniform(color - color_diff * np.array([1, 1, 1, 0]), color + color_diff * np.array([1, 1, 1, 0]))
                 # color pos:
-                position = bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].position
+                position = material_pos[1][k-1, j, :]
                 bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].position = \
-                    np.random.uniform(position-0.1,position+0.1)
+                    np.random.uniform(position-pos_diff, position+pos_diff)
 
         # texture
         mat_bar = bpy.data.materials[str(i)].node_tree
@@ -83,17 +124,17 @@ def material_randomizer():
         mat_bar.nodes['Mapping.001'].inputs['Rotation'].default_value = np.random.uniform([0, 0, 0], np.pi/2*np.array([1, 1, 1]))
         mat_bar.nodes['Mapping.001'].inputs['Scale'].default_value = np.random.uniform([8, 0, 8], [10, 0.2, 10])
 
-    # Material1
+    # Material plates
     bpy.data.materials['1'].node_tree.nodes['Noise Texture'].inputs['Roughness'].default_value = np.random.uniform(0.92, 1)
     for j in range(3):
         # color
-        color = bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].color
+        color = material_color[0][j, :]
         bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].color = \
-            np.random.uniform(color - color_diff * np.array([1, 1, 1, 1]), color + color_diff * np.array([1, 1, 1, 1]))
+            np.random.uniform(color - color_diff * np.array([1, 1, 1, 0]), color + color_diff * np.array([1, 1, 1, 0]))
         # color pos:
-        position = bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].position
+        position = material_pos[0][j, :]
         bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].position = \
-            np.random.uniform(position - 0.1, position + 0.1)
+            np.random.uniform(position - pos_diff, position + pos_diff)
 
 
 def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping):

@@ -17,9 +17,9 @@ np.set_printoptions(threshold=sys.maxsize)
 # Important parameter:
 append_to_existing = False
 segmenter = False
-num_camera = 3
+num_camera = 1
 num_poses_Bedroom = 1
-num_poses_Living_Room = 4
+num_poses_Living_Room = 10
 num_poses_Office = 1
 hit_radius = 1
 camera_radius = [0.3, 1.5]
@@ -136,8 +136,6 @@ output_file_edges.file_slots['Image'].path = ''
 output_file_edges.format.file_format = 'PNG'
 output_file_edges.format.color_mode = 'BW'
 
-bpy.data.scenes['Scene'].view_settings.view_transform = 'Standard'
-
 # Load Object to get 3D pose
 objs_edge = bproc.loader.load_blend(args.objects)
 sheet = bproc.filter.by_attr(objs_edge,"name","Wood_Sheet.*", regex=True)
@@ -195,14 +193,18 @@ for obj in objs_edge:
     LineArt.use_material = False
     LineArt.use_contour = False
     LineArt.use_edge_overlap = True
+    LineArt.use_crease = False
     gpencil_layer.use_lights = False
     gpencil.stroke_thickness_space = 'SCREENSPACE'
     gpencil.stroke_depth_order = '3D'
 
+# get material color and pos
+material_color, material_pos = Helper.get_material_color()
+
 additional_floor = bproc.loader.load_obj(os.path.join(base_path, 'objects', "floor.obj"))
 for obj in additional_floor:
     obj.set_location([0, 0, -0.05])
-    obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL", collision_margin=0.001)
+    obj.enable_rigidbody(active=False, collision_shape="CONVEX_HULL", collision_margin=0.004)
     bpy.data.collections['Objects'].objects.link(bpy.data.objects[obj.get_name()])
     bpy.data.scenes['Scene'].collection.objects.unlink(bpy.data.objects[obj.get_name()])
 
@@ -213,15 +215,12 @@ for room_category, room_list in rooms.items():
                 num_poses_Bedroom * (room_category == 'Bedroom')
 
     #for room in room_list:
-    for z in [0, 1, 2, 3]:
+    for z in [2]:
         room = room_list[z]
 
         # Load the scenenet room and label its objects with category ids based on the nyu mapping
         label_mapping = bproc.utility.LabelIdMapping.from_csv(bproc.utility.resolve_resource(os.path.join('id_mappings', 'nyu_idset.csv')))
         objs = bproc.loader.load_scenenet(os.path.join(args.scene_net_path, room_category, room), args.scene_texture_path, label_mapping)
-
-        # randomize material
-        Helper.material_randomizer()
 
         # Load all recommended cc materials, however don't load their textures yet
         cc_materials = bproc.loader.load_ccmaterials(args.cc_material_path, preload=True)
@@ -236,7 +235,7 @@ for room_category, room_list in rooms.items():
                     obj.set_material(i, random.choice(cc_materials))
 
                 if obj.get_name() == "carpet":
-                    obj.enable_rigidbody(active=False, collision_margin=0.005)
+                    obj.enable_rigidbody(active=False, collision_margin=0.001)
 
                 id = obj.get_cp("category_id")
                 # find id mapping: https://github.com/DLR-RM/BlenderProc/blob/main/blenderproc/resources/id_mappings/nyu_idset.csv
@@ -302,6 +301,9 @@ for room_category, room_list in rooms.items():
         tries = 0
 
         while tries < 10000 and poses < num_poses:
+
+            # randomize material
+            Helper.material_randomizer(material_color, material_pos)
 
             bproc.utility.reset_keyframes()
 
@@ -372,10 +374,12 @@ for room_category, room_list in rooms.items():
             bproc.camera.set_intrinsics_from_K_matrix(K, int(image_width), int(image_height))
             bproc.renderer.set_max_amount_of_samples(samples)
             bpy.data.scenes['Scene'].cycles.use_denoising = True
+            bpy.data.scenes['Scene'].view_settings.view_transform = 'Filmic'
             data = bproc.renderer.render()
             # Set rendering, such that computation is faster
             bproc.renderer.set_max_amount_of_samples(1)
             bpy.data.scenes['Scene'].cycles.use_denoising = False
+            bpy.data.scenes['Scene'].view_settings.view_transform = 'Standard'
 
             # LineArt at whole resolution
             bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
