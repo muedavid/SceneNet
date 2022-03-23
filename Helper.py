@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image
 import os
 import shutil
+import matplotlib.colors
+
 
 
 def get_material_color():
@@ -12,7 +14,7 @@ def get_material_color():
         pos = []
 
         # Material 1:
-        color_array = np.zeros((3, 4))
+        color_array = np.ones((3, 4))
         pos_array = np.zeros((3, 1))
         for j in range(3):
             # color
@@ -49,8 +51,10 @@ def get_material_color():
 def material_randomizer(material_color, material_pos):
 
     # Color
-    color_diff = 0.05
-    pos_diff = 0.03
+    color_diff_hue = 0.02
+    color_diff_sat = 0.05
+    color_diff_val = 0.05
+    pos_diff = 0.05
 
     # Material Base Block
     if np.random.uniform(0, 1) <= 0.5:
@@ -67,15 +71,15 @@ def material_randomizer(material_color, material_pos):
         # set new values
         if i == numerate[0] or not repeat:
 
-            color1 = material_color[2][0, :]
-            color2 = material_color[2][1, :]
-            color3 = material_color[2][2, :]
-            color1 = np.random.uniform(color1 - color_diff * np.array([1, 1, 1, 0]),
-                                       color1 + color_diff * np.array([1, 1, 1, 0]))
-            color2 = np.random.uniform(color2 - color_diff * np.array([1, 1, 1, 0]),
-                                       color2 + color_diff * np.array([1, 1, 1, 0]))
-            color3 = np.random.uniform(color3 - color_diff * np.array([1, 1, 1, 0]),
-                                       color3 + color_diff * np.array([1, 1, 1, 0]))
+            color1 = matplotlib.colors.rgb_to_hsv(material_color[2][0, 0:3])
+            color2 = matplotlib.colors.rgb_to_hsv(material_color[2][1, 0:3])
+            color3 = matplotlib.colors.rgb_to_hsv(material_color[2][2, 0:3])
+            color1 = np.random.uniform(color1 - np.array([color_diff_hue, color_diff_sat, color_diff_val]),
+                                       color1 + np.array([color_diff_hue, color_diff_sat, color_diff_val]))
+            color2 = np.random.uniform(color2 - np.array([color_diff_hue, color_diff_sat, color_diff_val]),
+                                       color2 + np.array([color_diff_hue, color_diff_sat, color_diff_val]))
+            color3 = np.random.uniform(color3 - np.array([color_diff_hue, color_diff_sat, color_diff_val]),
+                                       color3 + np.array([color_diff_hue, color_diff_sat, color_diff_val]))
             position1 = material_pos[2][0, :]
             position2 = material_pos[2][1, :]
             position3 = material_pos[2][2, :]
@@ -89,9 +93,9 @@ def material_randomizer(material_color, material_pos):
             noise_roughness = np.random.uniform(0.6, 1)
 
         # set Color and texture
-        mat_base.nodes['ColorRamp'].color_ramp.elements[0].color = color1
-        mat_base.nodes['ColorRamp'].color_ramp.elements[1].color = color2
-        mat_base.nodes['ColorRamp'].color_ramp.elements[2].color = color3
+        mat_base.nodes['ColorRamp'].color_ramp.elements[0].color = np.append(matplotlib.colors.hsv_to_rgb(color1), 1)
+        mat_base.nodes['ColorRamp'].color_ramp.elements[1].color = np.append(matplotlib.colors.hsv_to_rgb(color2), 1)
+        mat_base.nodes['ColorRamp'].color_ramp.elements[2].color = np.append(matplotlib.colors.hsv_to_rgb(color3), 1)
         mat_base.nodes['ColorRamp'].color_ramp.elements[0].position = position1
         mat_base.nodes['ColorRamp'].color_ramp.elements[1].position = position2
         mat_base.nodes['ColorRamp'].color_ramp.elements[2].position = position3
@@ -108,9 +112,12 @@ def material_randomizer(material_color, material_pos):
         for j in range(3):
             for k in range(1, 3):
                 # color
-                color = material_color[1][k-1, j, :]
-                bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].color =\
-                    np.random.uniform(color - color_diff * np.array([1, 1, 1, 0]), color + color_diff * np.array([1, 1, 1, 0]))
+                color = matplotlib.colors.rgb_to_hsv(material_color[1][k-1, j, 0:3])
+                color = np.random.uniform(color - np.array([color_diff_hue, color_diff_sat, color_diff_val]),
+                                          color + np.array([color_diff_hue, color_diff_sat, color_diff_val]))
+                bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].color = \
+                    np.append(matplotlib.colors.hsv_to_rgb(color), 1)
+
                 # color pos:
                 position = material_pos[1][k-1, j, :]
                 bpy.data.materials[str(i)].node_tree.nodes['ColorRamp{}'.format(k)].color_ramp.elements[j].position = \
@@ -128,16 +135,19 @@ def material_randomizer(material_color, material_pos):
     bpy.data.materials['1'].node_tree.nodes['Noise Texture'].inputs['Roughness'].default_value = np.random.uniform(0.92, 1)
     for j in range(3):
         # color
-        color = material_color[0][j, :]
+        color = matplotlib.colors.rgb_to_hsv(material_color[0][j, 0:3])
+        color = np.random.uniform(color - np.array([color_diff_hue, color_diff_sat, color_diff_val]),
+                                  color + np.array([color_diff_hue, color_diff_sat, color_diff_val]))
         bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].color = \
-            np.random.uniform(color - color_diff * np.array([1, 1, 1, 0]), color + color_diff * np.array([1, 1, 1, 0]))
+            np.append(matplotlib.colors.hsv_to_rgb(color), 1)
+
         # color pos:
         position = material_pos[0][j, :]
         bpy.data.materials['1'].node_tree.nodes['ColorRamp'].color_ramp.elements[j].position = \
             np.random.uniform(position - pos_diff, position + pos_diff)
 
 
-def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping):
+def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping, testing_mode):
 
     # Use Freestyle Image information together with segmentation to get semantic edges ground truth
     class_segmaps = seg_data["class_segmaps"]
@@ -180,7 +190,10 @@ def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping):
                 class_segmaps[i] = class_image
             class_segmaps[i] = class_segmaps[i].astype(np.uint8)
 
-            class_segmaps_image = Image.fromarray(class_segmaps[i]*80)
+            if testing_mode:
+                class_segmaps_image = Image.fromarray(class_segmaps[i]*80)
+            else:
+                class_segmaps_image = Image.fromarray(class_segmaps[i]*80)
             class_segmaps_image.save(paths["class_annotation"] + '/{:04d}.png'.format(img_idx))
 
             if not segmenter:
@@ -200,7 +213,10 @@ def save_data(data, seg_data, paths, names, img_idx, segmenter, color_mapping):
                         (instance_segmaps[i] <= maps["old_idx"] + 0.5) & (instance_segmaps[i] >= maps["old_idx"] - 0.5),
                         maps["new_idx"], instance_segmaps[i])
             instance_segmaps[i] = instance_segmaps[i].astype(np.uint8)
-            instance_segmaps_image = Image.fromarray(instance_segmaps[i]*15)
+            if testing_mode:
+                instance_segmaps_image = Image.fromarray(instance_segmaps[i]*15)
+            else:
+                instance_segmaps_image = Image.fromarray(instance_segmaps[i]*15)
             instance_segmaps_image.save(paths["instance_annotation"] + '/{:04d}.png'.format(img_idx))
 
             color_image = Image.fromarray(np.array(colors[i], dtype=np.uint8))
@@ -252,12 +268,21 @@ def ClearAllObjectsSceneNet(objs, mats):
     for o in objs:
         object = bpy.data.objects[o.get_name()]
         mesh_name = object.data.name
-        bpy.data.objects.remove(object)
-        bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
+        try:
+            bpy.data.objects.remove(object)
+            bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
+        except:
+            print("object or mesh has already been removed")
+
     for m in bpy.data.materials:
         if m.users == 0:
             bpy.data.materials.remove(m)
 
     for img in bpy.data.images:
         bpy.data.images.remove(img)
+    try:
+        for mat_name in bpy.data.objects['Cube_Cube.001'].material_slots.keys():
+            bpy.data.materials.remove(bpy.data.materials[mat_name])
+    except:
+        print("\n \n \n \n No material was assigned to additonal floor")
 
