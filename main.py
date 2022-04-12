@@ -15,28 +15,31 @@ start = time.time()
 np.set_printoptions(threshold=sys.maxsize)
 
 # Important parameter:
-append_to_existing = False
+append_to_existing = True
 segmenter = False
 testing_mode = False
-num_camera = 3
+num_camera = 2
 num_poses_Bedroom = 1
 num_poses_Living_Room = 4
 num_poses_Office = 1
 hit_radius = 1
 #camera_radius = [0.2, 1.2]
-camera_radius = [0.4, 1.2]
-sample_cube_dims = [0.3, 0.8, 1.8]
+camera_radius = [0.3, 1.2]
+sample_cube_dims = [0.2, 0.8, 1.5]
 samples = 512
-#samples = 1
+num_training = 9
+training = True
+testing = False
+
 
 if testing_mode:
     samples = 10
     num_poses_Living_Room = 1
     num_camera = 1
 
-
-#base_path = '/mnt/extern_hd/SceneNet'
 base_path = '/home/david/BlenderProc/SceneNet'
+if not os.path.isdir(base_path):
+    base_path = '/mnt/extern_hd/SceneNet'
 
 # Arguments
 parser = argparse.ArgumentParser()
@@ -44,7 +47,12 @@ parser.add_argument('scene_net_path',nargs='?', default= os.path.join(base_path,
 parser.add_argument('scene_texture_path',nargs='?', default= os.path.join(base_path,'texture_library'), help="Path to the downloaded texture files, you can find them at http://tinyurl.com/zpc9ppb")
 parser.add_argument('cc_material_path', nargs='?', default=os.path.join(base_path,'CCTexture'), help="Path to CCTextures folder, see the /scripts for the download script.")
 parser.add_argument('objects', nargs = '?', default=os.path.join(base_path,'objects','wood_element.blend'),help = "Path to the objects of the tracked objects")
-parser.add_argument('output_dir', nargs='?', default=os.path.join(base_path,'output'), help="Path to where the final files, will be saved")
+if training:
+    parser.add_argument('output_dir', nargs='?', default=os.path.join(base_path,'outputTrain'), help="Path to where the final files, will be saved")
+elif testing:
+    parser.add_argument('output_dir', nargs='?', default=os.path.join(base_path, 'outputTest'),help="Path to where the final files, will be saved")
+else:
+    raise ValueError('training and testing are set to False')
 args = parser.parse_args()
 
 # Create Path for Output
@@ -95,8 +103,11 @@ cx_range = [cx-1, cx+1]
 ratio = 1/2
 
 # get dictionary with possible rooms
-#rooms = {'Bedroom': [], 'Living-room': [], 'Office': []}
-rooms = {'Living-room': []}
+rooms = {'Bedroom': [], 'Living-room': [], 'Office': []}
+if testing_mode:
+    rooms = {'Bedroom': []}
+    room_test = 0
+    #rooms = {'Living-room': []}
 
 # set steps of 5
 color_mapping = {'1': 39, '2': 56, '3': 69, '4': 80, '5': 88, '6': 96,
@@ -108,6 +119,8 @@ for room_category in rooms.keys():
             rooms[room_category].append(file)
 
 bproc.init()
+bpy.ops.object.light_add(type="POINT", radius=1, align="WORLD", location=(0, 0, 8), scale=(1, 1, 1))
+bpy.data.lights["Point"].energy = np.random.uniform(800, 1600)
 
 bpy.data.scenes['Scene'].render.resolution_percentage = 100
 bpy.data.scenes['Scene'].render.engine = 'CYCLES'
@@ -115,7 +128,10 @@ bproc.renderer.set_noise_threshold(0.05)
 bpy.data.scenes['Scene'].render.film_transparent = True
 # bproc.renderer.set_max_amount_of_samples(1024)
 # TODO
-bpy.data.scenes['Scene'].cycles.device = 'GPU'
+if '/mnt/' in base_path:
+    bpy.data.scenes['Scene'].cycles.device = 'CPU'
+else:
+    bpy.data.scenes['Scene'].cycles.device = 'GPU'
 bproc.renderer.set_denoiser("INTEL")
 
 scene_collection = bpy.data.scenes['Scene'].collection
@@ -141,10 +157,7 @@ image_render_layer.name = 'Image Render Layers'
 bpy.data.scenes['Scene'].node_tree.nodes.new("CompositorNodeOutputFile")
 output_file_edges = bpy.data.scenes['Scene'].node_tree.nodes['File Output']
 bpy.data.scenes['Scene'].node_tree.links.new(edge_render_layer.outputs['Image'], output_file_edges.inputs['Image'])
-#output_file_edges.base_path = '/home/david/BlenderProc'
 output_file_edges.file_slots['Image'].path = ''
-output_file_edges.format.file_format = 'PNG'
-#TODO
 output_file_edges.format.color_mode = 'BW'
 
 # Load Object to get 3D pose
@@ -226,8 +239,12 @@ for room_category, room_list in rooms.items():
                 num_poses_Bedroom * (room_category == 'Bedroom')
 
     if testing_mode:
-        room = 5
-        room_list = room_list[room:room+1]
+        room_list = room_list[room_test:room_test+1]
+    elif training:
+        room_list = room_list[0:num_training]
+    elif testing:
+        room_list = room_list[num_training+1:12]
+
     for room in room_list:
 
         # Load the scenenet room and label its objects with category ids based on the nyu mapping
@@ -244,7 +261,7 @@ for room_category, room_list in rooms.items():
         new_floors = bproc.object.extract_floor(walls, new_name_for_object="floor", should_skip_if_object_is_already_there=True)
         # Set category id of all new floors
         for floor in new_floors:
-            Helper.ClearAllObjectsSceneNet(objs, cc_materials)
+            #Helper.ClearAllObjectsSceneNet(objs, cc_materials)
             floor.set_cp("category_id", label_mapping.id_from_label("floor"))
         # Add new floors to our total set of objects
         objs += new_floors
@@ -263,7 +280,13 @@ for room_category, room_list in rooms.items():
         bproc.lighting.light_surface(lamps, emission_strength=15)
         # Also let all ceiling objects emit a bit of light, so the whole room gets more bright
         ceilings = bproc.filter.by_attr(objs, "name", ".*[c|C]eiling.*", regex=True)
-        bproc.lighting.light_surface(ceilings, emission_strength=2, emission_color=[1,1,1,1])
+
+
+        #TODO consider increasing value
+
+        # Color of ceiling should be emissive in different colors
+        light_color = np.random.uniform(np.array([255, 241, 224, 255])/255, np.array([224, 241, 255, 255])/255)
+        bproc.lighting.light_surface(ceilings, emission_strength= np.random.uniform(3,5), emission_color=light_color)
 
         obj_all = objs+objs_edge
         # Init bvh tree containing all mesh objects
@@ -336,9 +359,10 @@ for room_category, room_list in rooms.items():
                 try:
                     bpy.data.objects.remove(object)
                     bpy.data.meshes.remove(bpy.data.meshes[mesh_name])
+                    objs.remove(obj)
                 except:
                     print("object or mesh has already been removed")
-                objs.remove(obj)
+
 
         # Now load all textures of the materials that were assigned to at least one object
         bproc.loader.load_ccmaterials(args.cc_material_path, fill_used_empty_materials=True)
@@ -440,76 +464,85 @@ for room_category, room_list in rooms.items():
             bpy.data.scenes['Scene'].cycles.use_denoising = True
             bpy.data.scenes['Scene'].view_settings.view_transform = 'Filmic'
             data = bproc.renderer.render()
-            # Set rendering, such that computation is faster
-            bproc.renderer.set_max_amount_of_samples(1)
-            bpy.data.scenes['Scene'].cycles.use_denoising = False
-            bpy.data.scenes['Scene'].view_settings.view_transform = 'Standard'
 
-            # LineArt at whole resolution
-            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
-            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
-            bpy.ops.object.lineart_bake_strokes_all()
-            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
-            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
+            value = np.amax(np.array(data["colors"][0]), axis = -1)
+            if np.mean(value) >= 80:
 
-            # class
-            for obj in objs_edge:
-                mat = bpy.data.materials[obj.get_name()]
-                # TODO
-                color = obj.get_cp("category_id") * 5 / 255.0
-                mat.grease_pencil.color = np.array([color, color, color, 1])
-            bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_class']
-            bproc.renderer.render()
+                # Set rendering, such that computation is faster
+                bproc.renderer.set_max_amount_of_samples(1)
+                bpy.data.scenes['Scene'].cycles.use_denoising = False
+                bpy.data.scenes['Scene'].view_settings.view_transform = 'Standard'
 
-            # instance
-            k = 1
-            for obj in objs_edge:
-                mat = bpy.data.materials[obj.get_name()]
-                color = k * 5 / 255.0
-                k += 1
-                mat.grease_pencil.color = np.array([color, color, color, 1])
-            bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_instance']
-            #bproc.renderer.render()
-            seg_data_full = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
+                # LineArt at whole resolution
+                bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
+                bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
+                bpy.ops.object.lineart_bake_strokes_all()
+                bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
+                bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
+
+                # class
+                for obj in objs_edge:
+                    mat = bpy.data.materials[obj.get_name()]
+                    # TODO
+                    color = obj.get_cp("category_id") * 5 / 255.0
+                    mat.grease_pencil.color = np.array([color, color, color, 1])
+                bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_class']
+                bproc.renderer.render()
+
+                # instance
+                k = 1
+                for obj in objs_edge:
+                    mat = bpy.data.materials[obj.get_name()]
+                    color = k * 5 / 255.0
+                    k += 1
+                    mat.grease_pencil.color = np.array([color, color, color, 1])
+                bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_full['line_art_instance']
+                #bproc.renderer.render()
+                seg_data_full = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
 
 
-            # Rendering Images at half Resolution
-            bproc.camera.set_intrinsics_from_K_matrix(K * ratio, int(image_width * ratio), int(image_height * ratio))
+                # Rendering Images at half Resolution
+                bproc.camera.set_intrinsics_from_K_matrix(K * ratio, int(image_width * ratio), int(image_height * ratio))
 
-            # LineArt at whole resolution
-            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
-            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
-            bpy.ops.object.lineart_bake_strokes_all()
-            bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
-            bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
+                # LineArt at whole resolution
+                bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = False
+                bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = False
+                bpy.ops.object.lineart_bake_strokes_all()
+                bpy.data.scenes['Scene'].view_layers['edge'].layer_collection.children['Objects'].exclude = True
+                bpy.data.scenes['Scene'].view_layers['ViewLayer'].layer_collection.children['LineArt'].exclude = True
 
-            # class
-            for obj in objs_edge:
-                mat = bpy.data.materials[obj.get_name()]
-                color = obj.get_cp("category_id") * 5 / 255.0
-                mat.grease_pencil.color = np.array([color, color, color, 1])
-            bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art_class']
-            bproc.renderer.render()
+                # class
+                for obj in objs_edge:
+                    mat = bpy.data.materials[obj.get_name()]
+                    color = obj.get_cp("category_id") * 5 / 255.0
+                    mat.grease_pencil.color = np.array([color, color, color, 1])
+                bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art_class']
+                bproc.renderer.render()
 
-            # instance
-            k = 1
-            for obj in objs_edge:
-                mat = bpy.data.materials[obj.get_name()]
-                color = k * 5 / 255.0
-                k += 1
-                mat.grease_pencil.color = np.array([color, color, color, 1])
-            bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art_instance']
-            #bproc.renderer.render()
-            seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
+                # instance
+                k = 1
+                for obj in objs_edge:
+                    mat = bpy.data.materials[obj.get_name()]
+                    color = k * 5 / 255.0
+                    k += 1
+                    mat.grease_pencil.color = np.array([color, color, color, 1])
+                bpy.data.scenes['Scene'].node_tree.nodes['File Output'].base_path = paths_half['line_art_instance']
+                #bproc.renderer.render()
+                seg_data_half = bproc.renderer.render_segmap(map_by=["class", "instance", "name"])
 
-            if not testing_mode:
-                _ = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter, color_mapping, testing_mode)
-            #img_idx = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping)
-            img_idx = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping, testing_mode)
+                try:
+                    if not testing_mode:
+                        _ = Helper.save_data(data, seg_data_full, paths_full, names, img_idx, segmenter, color_mapping, testing_mode)
+                    #img_idx = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping)
+                    img_idx = Helper.save_data(data, seg_data_half, paths_half, names, img_idx, segmenter, color_mapping, testing_mode)
+                except:
+                    print("Couldn't save data, Will skip it once")
 
+            else:
+                print("Images are too dark")
         if not testing_mode:
-            Helper.ClearAllObjectsSceneNet(objs, cc_materials)
+            Helper.ClearAllObjectsSceneNet(objs)
 
 end = time.time()
 with open('time.txt', 'w') as f:
